@@ -75,6 +75,10 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
+/* Regle critique : l'attribut HTML "hidden" doit toujours l'emporter sur les
+   regles display:grid/flex ci-dessous (sinon l'ecran de connexion et
+   l'application restent visibles en meme temps apres la connexion). */
+[hidden] { display: none !important; }
 body {
   margin: 0;
   font-family: var(--font-body);
