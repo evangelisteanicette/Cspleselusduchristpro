@@ -390,6 +390,12 @@ a { color: var(--gold-500); }
   padding: 5px 14px; font-size: 0.82rem; font-weight: 500;
 }
 
+.report-actions-panel { background: linear-gradient(135deg, var(--navy-900), var(--navy-800)); color: #fff; }
+.report-actions-panel h3 { color: #fff; }
+.report-actions-panel p { color: var(--gold-100); }
+.report-actions { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.report-actions .btn-secondary { background: rgba(255,255,255,0.12); color: #fff; border-color: rgba(255,255,255,0.25); }
+
 .row-voided { opacity: 0.5; text-decoration: line-through; }
 .user-chip-text { min-width: 0; overflow: hidden; }
 .user-chip-text .user-name, .user-chip-text .user-role { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -535,6 +541,198 @@ const DEFAULT_SCHOOLS = [
  * Modifiable ensuite dans Paramètres > Années scolaires.
  */
 const DEFAULT_SCHOOL_YEAR = "2026-2027";
+
+// ============================================================
+// reportDoc.js
+// ============================================================
+/**
+ * =============================================================
+ *  GÉNÉRATEUR DE DOCUMENTS DE RAPPORT — Élus School Pro (§63-64, §75-77)
+ * =============================================================
+ *  Produit un document "de secrétariat" : en-tête officiel, tableaux
+ *  encadrés et colorés (bleu ciel pour les titres, vert citron pour les
+ *  valeurs positives, rouge pour les valeurs à surveiller), police Arial,
+ *  pagination — au lieu d'un simple tableau de type tableur.
+ *
+ *  Deux sorties possibles à partir du même document :
+ *  - PDF  : ouverture dans une fenêtre + impression navigateur
+ *           (bouton "Enregistrer au format PDF" dans la boîte d'impression).
+ *  - Word : téléchargement direct d'un fichier .doc (HTML balisé que
+ *           Microsoft Word sait ouvrir nativement, mise en forme conservée).
+ * =============================================================
+ */
+
+const SKY_BLUE = "#4FA3D9";
+const SKY_BLUE_LIGHT = "#EAF4FC";
+const LIME = "#7CB518";
+const LIME_LIGHT = "#F1F8E3";
+const RED = "#D14343";
+const RED_LIGHT = "#FDECEC";
+const NAVY = "#101B33";
+const GOLD = "#C89B3C";
+
+/**
+ * @param {object} opts
+ * @param {string} opts.title        Titre du rapport (ex. "Effectifs par classe")
+ * @param {string} [opts.subtitle]   Sous-titre (ex. "Année scolaire 2026-2027")
+ * @param {string} [opts.schoolName] Nom de l'école concernée, ou "Toutes les écoles"
+ * @param {string} [opts.generatedBy] Nom de la personne ayant généré le rapport
+ * @param {Array}  opts.sections     [{ heading, headers: [...], rows: [[...]], highlight: fn(row) => 'red'|'lime'|null }]
+ */
+function buildReportDocumentHTML({ title, subtitle = "", schoolName = "", generatedBy = "", sections = [] }) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("fr-FR", { year: "numeric", month: "long", day: "numeric" });
+  const timeStr = now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+
+  const sectionsHtml = sections
+    .map((section) => {
+      const rowsHtml = section.rows.length
+        ? section.rows
+            .map((row) => {
+              const mark = section.highlight ? section.highlight(row) : null;
+              const rowStyle =
+                mark === "red" ? `background:${RED_LIGHT}; color:${RED}; font-weight:600;` :
+                mark === "lime" ? `background:${LIME_LIGHT}; color:${LIME}; font-weight:600;` : "";
+              return `<tr style="${rowStyle}">${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+            })
+            .join("")
+        : `<tr><td colspan="${section.headers.length}" style="text-align:center; color:#888; font-style:italic;">Aucune donnée</td></tr>`;
+
+      return `
+        <div class="section">
+          <div class="section-title">${section.heading}</div>
+          <table>
+            <thead><tr>${section.headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    })
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>${title}</title>
+<style>
+  @page { margin: 18mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1A2238;
+    margin: 0;
+    padding: 24px;
+    font-size: 13px;
+  }
+  .letterhead {
+    display: flex; align-items: center; gap: 14px;
+    border-bottom: 3px solid ${NAVY};
+    padding-bottom: 14px; margin-bottom: 6px;
+  }
+  .letterhead-badge {
+    width: 46px; height: 46px; border-radius: 50%; background: ${NAVY};
+    color: ${GOLD}; display: flex; align-items: center; justify-content: center;
+    font-weight: bold; font-size: 20px; font-family: Georgia, serif; flex-shrink: 0;
+  }
+  .letterhead h1 { font-size: 15px; margin: 0; color: ${NAVY}; }
+  .letterhead p { margin: 2px 0 0; font-size: 11px; color: #5B6480; }
+
+  .report-title-band {
+    background: ${SKY_BLUE}; color: #fff; padding: 10px 16px; border-radius: 6px;
+    margin: 18px 0 4px; font-size: 16px; font-weight: bold;
+  }
+  .report-meta { font-size: 11px; color: #5B6480; margin-bottom: 18px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+
+  .section { margin-bottom: 22px; page-break-inside: avoid; }
+  .section-title {
+    background: ${SKY_BLUE_LIGHT}; color: ${NAVY}; font-weight: bold; font-size: 13px;
+    padding: 7px 12px; border-left: 4px solid ${SKY_BLUE}; margin-bottom: 8px;
+  }
+  table { width: 100%; border-collapse: collapse; border: 1.5px solid ${NAVY}; }
+  th {
+    background: ${NAVY}; color: #fff; text-align: left; padding: 8px 10px;
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.02em;
+  }
+  td { padding: 7px 10px; border-bottom: 1px solid #D8DCE8; font-size: 12.5px; }
+  tbody tr:nth-child(even) { background: #F7F8FC; }
+
+  .legend { display: flex; gap: 18px; margin-top: 10px; font-size: 11px; color: #5B6480; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .footer {
+    margin-top: 30px; padding-top: 10px; border-top: 1px solid #D8DCE8;
+    font-size: 10.5px; color: #8A93AD; display: flex; justify-content: space-between;
+  }
+  @media print {
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="letterhead">
+    <div class="letterhead-badge">É</div>
+    <div>
+      <h1>${INSTITUTION_NAME}</h1>
+      <p>${APP_NAME} — Document généré automatiquement</p>
+    </div>
+  </div>
+
+  <div class="report-title-band">${title}</div>
+  <div class="report-meta">
+    <span>${subtitle}${schoolName ? " · " + schoolName : ""}</span>
+    <span>Généré le ${dateStr} à ${timeStr}${generatedBy ? " par " + generatedBy : ""}</span>
+  </div>
+
+  ${sectionsHtml}
+
+  <div class="legend">
+    <span><span class="dot" style="background:${RED};"></span> À surveiller / en retard</span>
+    <span><span class="dot" style="background:${LIME};"></span> Situation favorable</span>
+  </div>
+
+  <div class="footer">
+    <span>${INSTITUTION_NAME}</span>
+    <span>Page générée par ${APP_NAME}</span>
+  </div>
+
+  <script class="no-print">window.print && window.addEventListener('load', () => {});<\/script>
+</body>
+</html>`;
+}
+
+function printReportDocument(options) {
+  const html = buildReportDocumentHTML(options);
+  const win = window.open("", "_blank", "width=900,height=800");
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => win.print(), 300);
+}
+
+/**
+ * Télécharge le même document sous forme de fichier .doc (Microsoft Word
+ * l'ouvre nativement en conservant les couleurs, les cadres et les tableaux).
+ */
+function downloadReportAsWord(options, filename) {
+  const html = buildReportDocumentHTML(options);
+  const blob = new Blob(
+    [
+      '\ufeff<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">',
+      html.replace(/^<!DOCTYPE html>\s*<html[^>]*>/, "").replace(/<\/html>\s*$/, ""),
+      "</html>"
+    ],
+    { type: "application/msword" }
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".doc") ? filename : `${filename}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // ============================================================
 // roles.js
@@ -1529,9 +1727,11 @@ async function addAbsence(studentId, schoolId, { date, status, reason }) {
 
 const TUITION_COMPONENTS = [
   { key: "inscription", label: "Inscription" },
+  { key: "uniforme", label: "Achat uniforme" },
   { key: "tranche1", label: "1ère tranche" },
   { key: "tranche2", label: "2ème tranche" },
-  { key: "tranche3", label: "3ème tranche" }
+  { key: "tranche3", label: "3ème tranche" },
+  { key: "tranche4", label: "4ème tranche" }
 ];
 
 const PAYMENT_MODES = [
@@ -1541,35 +1741,72 @@ const PAYMENT_MODES = [
 ];
 
 // ============================================================= FRAIS DE SCOLARITÉ =
+// Les montants et échéances sont définis par école ET par classe (§53 : "les
+// montants peuvent être différents selon l'école ou la classe") — la
+// scolarité d'une CI à Agouna peut différer de celle d'une CI à Avogbana.
 
-async function seedFeeSettingsIfEmpty(schoolYear) {
-  const ref = doc(db, "feeSettings", schoolYear);
+function feeSettingsId(schoolId, classe, schoolYear) {
+  return `${schoolId}_${classe}_${schoolYear}`;
+}
+
+async function seedFeeSettingsIfEmpty(schoolId, classe, schoolYear) {
+  const ref = doc(db, "feeSettings", feeSettingsId(schoolId, classe, schoolYear));
   const snap = await getDoc(ref);
   if (snap.exists()) return;
   await setDoc(ref, {
-    inscription: 0, tranche1: 0, tranche2: 0, tranche3: 0,
-    deadlineInscription: "", deadlineTranche1: "", deadlineTranche2: "", deadlineTranche3: ""
+    schoolId, classe, schoolYear,
+    inscription: 0, uniforme: 0, tranche1: 0, tranche2: 0, tranche3: 0, tranche4: 0,
+    deadlineInscription: "", deadlineUniforme: "", deadlineTranche1: "", deadlineTranche2: "", deadlineTranche3: "", deadlineTranche4: ""
   });
 }
 
-function subscribeToFeeSettings(schoolYear, callback) {
-  return onSnapshot(doc(db, "feeSettings", schoolYear), (snap) => {
+/** Frais d'une seule école + classe (utilisé pour le formulaire de paramétrage et le dossier d'un élève). */
+function subscribeToFeeSettings(schoolId, classe, schoolYear, callback) {
+  return onSnapshot(doc(db, "feeSettings", feeSettingsId(schoolId, classe, schoolYear)), (snap) => {
     callback(snap.exists() ? snap.data() : {});
   });
 }
 
-async function saveFeeSettings(schoolYear, data) {
-  await setDoc(doc(db, "feeSettings", schoolYear), {
+async function saveFeeSettings(schoolId, classe, schoolYear, data) {
+  await setDoc(doc(db, "feeSettings", feeSettingsId(schoolId, classe, schoolYear)), {
+    schoolId, classe, schoolYear,
     inscription: Number(data.inscription) || 0,
+    uniforme: Number(data.uniforme) || 0,
     tranche1: Number(data.tranche1) || 0,
     tranche2: Number(data.tranche2) || 0,
     tranche3: Number(data.tranche3) || 0,
+    tranche4: Number(data.tranche4) || 0,
     deadlineInscription: data.deadlineInscription || "",
+    deadlineUniforme: data.deadlineUniforme || "",
     deadlineTranche1: data.deadlineTranche1 || "",
     deadlineTranche2: data.deadlineTranche2 || "",
-    deadlineTranche3: data.deadlineTranche3 || ""
+    deadlineTranche3: data.deadlineTranche3 || "",
+    deadlineTranche4: data.deadlineTranche4 || ""
   }, { merge: true });
-  logActivity("update_fee_settings", `Mise à jour des frais de scolarité ${schoolYear}`);
+  logActivity("update_fee_settings", `Mise à jour des frais de scolarité — ${classe} (${schoolYear})`, { schoolId });
+}
+
+/**
+ * Toutes les grilles de frais d'une année scolaire, en une seule requête
+ * (nécessaire pour le tableau de bord, les rapports et la liste des retards,
+ * qui doivent connaître le tarif propre à chaque élève selon son école ET
+ * sa classe sans multiplier les lectures Firestore).
+ * Retourne une map : { "ecoleId_classe": {...montants et échéances} }
+ */
+function subscribeToAllFeeSettings(schoolYear, callback) {
+  const q = query(collection(db, "feeSettings"), where("schoolYear", "==", schoolYear));
+  return onSnapshot(q, (snap) => {
+    const map = {};
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      map[`${data.schoolId}_${data.classe}`] = data;
+    });
+    callback(map);
+  });
+}
+
+function feeSettingsFor(feeSettingsMap, schoolId, classe) {
+  return feeSettingsMap[`${schoolId}_${classe}`] || {};
 }
 
 // ============================================================= AUTRES FRAIS (catalogue) =
@@ -1612,6 +1849,26 @@ async function assignFeeToStudent(student, feeType, schoolYear) {
     createdAt: serverTimestamp()
   });
   logActivity("assign_fee", `Ajout du frais "${feeType.name}" à ${student.firstName} ${student.lastName}`, {
+    schoolId: student.schoolId, studentId: student.id
+  });
+}
+
+/**
+ * Ajoute un "autre frais" libre, saisi directement au moment de la collecte
+ * (ex. "Frais de bulletin — 2000 FCFA") sans passer par le catalogue.
+ * Permet de tracer précisément à quelle fin chaque somme a été perçue (§58).
+ */
+async function addCustomFeeToStudent(student, { name, amount }, schoolYear) {
+  await addDoc(studentFeesCol, {
+    studentId: student.id,
+    schoolId: student.schoolId,
+    schoolYear,
+    feeTypeId: null,
+    feeTypeName: name.trim(),
+    amount: Number(amount) || 0,
+    createdAt: serverTimestamp()
+  });
+  logActivity("assign_fee", `Ajout du frais "${name}" (${amount} FCFA) à ${student.firstName} ${student.lastName}`, {
     schoolId: student.schoolId, studentId: student.id
   });
 }
@@ -1933,7 +2190,7 @@ let academicMeta = { evaluationTypes: [], periods: [] };
 let subjectsCache = [];
 let academicSubTab = "subjects";
 let financeSubTab = "dashboard";
-let feeSettingsCache = {};
+let feeSettingsMapCache = {};
 let feeTypesCache = [];
 let usersCache = [];
 let institutionSettings = {};
@@ -1997,9 +2254,6 @@ function renderAppShell(profile) {
     academicYear = data;
     const el = document.getElementById("topbar-year");
     if (el) el.textContent = data.current || "";
-    if (profile.role === "adminGeneral" && data.current) {
-      seedFeeSettingsIfEmpty(data.current).catch(() => {});
-    }
   });
 
   if (hasPermission(profile.role, PERMISSIONS.VIEW_STUDENTS)) {
@@ -2196,7 +2450,7 @@ function renderDashboard(content, profile) {
       let remaining = 0, late = 0;
       students.forEach((s) => {
         const balance = computeStudentBalance(
-          s, feeSettingsCache,
+          s, feeSettingsFor(feeSettingsMapCache, s.schoolId, s.currentClass),
           otherFees.filter((f) => f.studentId === s.id),
           reductions.filter((r) => r.studentId === s.id),
           payments.filter((p) => p.studentId === s.id)
@@ -2210,7 +2464,7 @@ function renderDashboard(content, profile) {
     const u1 = subscribeToSchoolPayments(schoolId, academicYear.current, (d) => { payments = d; repaint(); });
     const u2 = subscribeToSchoolReductions(schoolId, academicYear.current, (d) => { reductions = d; repaint(); });
     const u3 = subscribeToSchoolStudentFees(schoolId, academicYear.current, (d) => { otherFees = d; repaint(); });
-    const u4 = subscribeToFeeSettings(academicYear.current, (d) => { feeSettingsCache = d; repaint(); });
+    const u4 = subscribeToAllFeeSettings(academicYear.current, (map) => { feeSettingsMapCache = map; repaint(); });
     financeUnsub = () => { u1(); u2(); u3(); u4(); };
   }
 
@@ -2916,7 +3170,7 @@ function computeAndPaintFinanceDashboard(panel, schoolId) {
   const effectiveId = schoolId === "all" ? null : schoolId;
   if (financeUnsub) financeUnsub();
 
-  let payments = [], reductions = [], otherFees = [];
+  let payments = [], reductions = [], otherFees = [], feeSettingsMap = {};
   const repaint = () => {
     const today = new Date().toISOString().slice(0, 10);
     const monthPrefix = today.slice(0, 7);
@@ -2931,7 +3185,7 @@ function computeAndPaintFinanceDashboard(panel, schoolId) {
     let remaining = 0, upToDate = 0, late = 0;
     students.forEach((s) => {
       const balance = computeStudentBalance(
-        s, feeSettingsCache,
+        s, feeSettingsFor(feeSettingsMap, s.schoolId, s.currentClass),
         otherFees.filter((f) => f.studentId === s.id),
         reductions.filter((r) => r.studentId === s.id),
         payments.filter((p) => p.studentId === s.id)
@@ -2948,10 +3202,11 @@ function computeAndPaintFinanceDashboard(panel, schoolId) {
     setStatValue(panel, 5, late);
   };
 
+  const feeSettingsUnsub2 = subscribeToAllFeeSettings(academicYear.current, (map) => { feeSettingsMap = map; repaint(); });
   const paymentsUnsub = subscribeToSchoolPayments(effectiveId, academicYear.current, (data) => { payments = data; repaint(); });
   const reductionsUnsub = subscribeToSchoolReductions(effectiveId, academicYear.current, (data) => { reductions = data; repaint(); });
   const feesUnsub = subscribeToSchoolStudentFees(effectiveId, academicYear.current, (data) => { otherFees = data; repaint(); });
-  financeUnsub = () => { paymentsUnsub(); reductionsUnsub(); feesUnsub(); };
+  financeUnsub = () => { paymentsUnsub(); reductionsUnsub(); feesUnsub(); feeSettingsUnsub2(); };
 }
 
 function setStatValue(panel, index, value) {
@@ -3004,13 +3259,13 @@ function renderLatePaymentsPanel(panel, profile) {
 
 function computeLateStudents(schoolId, callback) {
   if (financeUnsub) financeUnsub();
-  let payments = [], reductions = [], otherFees = [];
+  let payments = [], reductions = [], otherFees = [], feeSettingsMap = {};
   const repaint = () => {
     const students = allStudentsCache.filter((s) => !schoolId || s.schoolId === schoolId);
     const rows = students
       .map((s) => {
         const balance = computeStudentBalance(
-          s, feeSettingsCache,
+          s, feeSettingsFor(feeSettingsMap, s.schoolId, s.currentClass),
           otherFees.filter((f) => f.studentId === s.id),
           reductions.filter((r) => r.studentId === s.id),
           payments.filter((p) => p.studentId === s.id)
@@ -3024,10 +3279,11 @@ function computeLateStudents(schoolId, callback) {
     callback(rows);
   };
 
+  const p0 = subscribeToAllFeeSettings(academicYear.current, (map) => { feeSettingsMap = map; repaint(); });
   const p1 = subscribeToSchoolPayments(schoolId, academicYear.current, (d) => { payments = d; repaint(); });
   const p2 = subscribeToSchoolReductions(schoolId, academicYear.current, (d) => { reductions = d; repaint(); });
   const p3 = subscribeToSchoolStudentFees(schoolId, academicYear.current, (d) => { otherFees = d; repaint(); });
-  financeUnsub = () => { p1(); p2(); p3(); };
+  financeUnsub = () => { p0(); p1(); p2(); p3(); };
 }
 
 function paintLateTable(rows, profile) {
@@ -3058,24 +3314,37 @@ function paintLateTable(rows, profile) {
 
 let feeTypesPanelUnsub = null;
 let feeSettingsPanelUnsub = null;
+let feeConfigSelection = { schoolId: null, classe: CLASSES[0] };
+let feeConfigCurrent = {};
 
 function renderFeeConfigPanel(panel, profile) {
+  const showSchoolFilter = canViewAllSchools(profile.role);
+  if (!feeConfigSelection.schoolId) {
+    feeConfigSelection.schoolId = showSchoolFilter ? currentSchools[0]?.id : profile.schoolId;
+  }
+
   panel.innerHTML = `
     <div class="panel" style="margin-top:8px;">
       <h3>Frais de scolarité — ${escapeHtml(academicYear.current)}</h3>
-      <form id="form-fee-settings" class="form-grid-2" style="margin-top:12px;">
+      <p class="muted">Chaque école et chaque classe a sa propre grille tarifaire — pensez à renseigner chaque combinaison séparément.</p>
+      <div class="filters-bar" style="margin-top:12px;">
+        ${showSchoolFilter ? `<select id="fc-school">${currentSchools.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select>` : ""}
+        <select id="fc-class">${CLASSES.map((c) => `<option value="${c}">${c}</option>`).join("")}</select>
+      </div>
+      <form id="form-fee-settings" class="form-grid-2" style="margin-top:16px;">
         ${TUITION_COMPONENTS.map(
           (c) => `
-          <label>${c.label} — Montant (FCFA)<input type="number" name="${c.key}" min="0" value="${feeSettingsCache[c.key] || 0}" /></label>
-          <label>${c.label} — Échéance<input type="date" name="deadline${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}" value="${feeSettingsCache[`deadline${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`] || ""}" /></label>
+          <label>${c.label} — Montant (FCFA)<input type="number" name="${c.key}" min="0" value="0" /></label>
+          <label>${c.label} — Échéance<input type="date" name="deadline${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}" value="" /></label>
         `
         ).join("")}
-        <button type="submit" class="btn-primary span-2">Enregistrer</button>
+        <button type="submit" class="btn-primary span-2">Enregistrer pour cette école et cette classe</button>
       </form>
     </div>
 
     <div class="panel" style="margin-top:16px;">
       <h3>Catalogue des autres frais</h3>
+      <p class="muted">Des raccourcis pour la saisie libre dans le dossier d'un élève (ex. cantine, transport). Un frais ponctuel (ex. "frais de dossier CM2") peut aussi être tapé directement sans passer par ce catalogue.</p>
       <form id="form-add-feetype" class="observation-form" style="margin-top:10px;">
         <input type="text" name="name" placeholder="Ex. Cantine" required />
         <input type="number" name="defaultAmount" placeholder="Montant (FCFA)" min="0" required style="width:150px;" />
@@ -3085,10 +3354,23 @@ function renderFeeConfigPanel(panel, profile) {
     </div>
   `;
 
+  const schoolSel = document.getElementById("fc-school");
+  const classSel = document.getElementById("fc-class");
+  if (schoolSel) {
+    schoolSel.value = feeConfigSelection.schoolId;
+    schoolSel.addEventListener("change", () => { feeConfigSelection.schoolId = schoolSel.value; loadFeeConfigForm(); });
+  }
+  classSel.value = feeConfigSelection.classe;
+  classSel.addEventListener("change", () => { feeConfigSelection.classe = classSel.value; loadFeeConfigForm(); });
+
   document.getElementById("form-fee-settings").addEventListener("submit", async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
-    await saveFeeSettings(academicYear.current, data);
+    await saveFeeSettings(feeConfigSelection.schoolId, feeConfigSelection.classe, academicYear.current, data);
+    const btn = e.target.querySelector('button[type="submit"]');
+    const original = btn.textContent;
+    btn.textContent = "Enregistré ✓";
+    setTimeout(() => { btn.textContent = original; }, 1500);
   });
 
   const feeTypesUnsub = subscribeToFeeTypes((types) => {
@@ -3116,8 +3398,28 @@ function renderFeeConfigPanel(panel, profile) {
   if (feeTypesPanelUnsub) feeTypesPanelUnsub();
   feeTypesPanelUnsub = feeTypesUnsub;
 
+  loadFeeConfigForm();
+}
+
+function loadFeeConfigForm() {
+  const { schoolId, classe } = feeConfigSelection;
+  if (!schoolId) return;
+
+  seedFeeSettingsIfEmpty(schoolId, classe, academicYear.current).catch(() => {});
+
   if (feeSettingsPanelUnsub) feeSettingsPanelUnsub();
-  feeSettingsPanelUnsub = subscribeToFeeSettings(academicYear.current, (data) => { feeSettingsCache = data; });
+  feeSettingsPanelUnsub = subscribeToFeeSettings(schoolId, classe, academicYear.current, (data) => {
+    feeConfigCurrent = data;
+    const form = document.getElementById("form-fee-settings");
+    if (!form) return;
+    TUITION_COMPONENTS.forEach((c) => {
+      const amountField = form.querySelector(`[name="${c.key}"]`);
+      const deadlineKey = `deadline${c.key.charAt(0).toUpperCase()}${c.key.slice(1)}`;
+      const deadlineField = form.querySelector(`[name="${deadlineKey}"]`);
+      if (amountField) amountField.value = data[c.key] || 0;
+      if (deadlineField) deadlineField.value = data[deadlineKey] || "";
+    });
+  });
 }
 
 function renderStudentDetail(content, profile, studentId) {
@@ -3396,14 +3698,17 @@ function renderStudentFinanceTab(panel, student) {
     const balance = computeStudentBalance(student, feeSettings, otherFees, reductions, payments);
     const box = document.getElementById("balance-section");
     if (!box) return;
+    const totalReduction = balance.all.reduce((s, c) => s + c.reduction, 0);
     box.innerHTML = `
       <h3>Solde financier — ${escapeHtml(academicYear.current)}</h3>
       <table class="data-table" style="margin-top:10px;">
-        <thead><tr><th>Composante</th><th>Dû</th><th>Payé</th><th>Restant</th><th>Statut</th></tr></thead>
+        <thead><tr><th>Composante</th><th>Montant de base</th><th>Réduction</th><th>Dû</th><th>Payé</th><th>Restant</th><th>Statut</th></tr></thead>
         <tbody>
           ${balance.all.map((c) => `
             <tr>
               <td>${escapeHtml(c.label)}</td>
+              <td>${formatFCFA(c.base)}</td>
+              <td>${c.reduction > 0 ? `<span style="color:var(--success);">- ${formatFCFA(c.reduction)}</span>` : '<span class="muted">—</span>'}</td>
               <td>${formatFCFA(c.required)}</td>
               <td>${formatFCFA(c.paid)}</td>
               <td>${formatFCFA(c.remaining)}</td>
@@ -3414,6 +3719,7 @@ function renderStudentFinanceTab(panel, student) {
       <div class="bulletin-summary">
         <div><span class="muted">Total dû</span><strong>${formatFCFA(balance.totalDue)}</strong></div>
         <div><span class="muted">Total payé</span><strong>${formatFCFA(balance.totalPaid)}</strong></div>
+        <div><span class="muted">Total réductions</span><strong>${formatFCFA(totalReduction)}</strong></div>
         <div><span class="muted">Restant</span><strong>${formatFCFA(balance.totalRemaining)}</strong></div>
       </div>
     `;
@@ -3470,7 +3776,7 @@ function renderStudentFinanceTab(panel, student) {
   };
 
   if (tabFinanceUnsub.feeSettings) tabFinanceUnsub.feeSettings();
-  tabFinanceUnsub.feeSettings = subscribeToFeeSettings(academicYear.current, (d) => { feeSettings = d; repaintBalance(); });
+  tabFinanceUnsub.feeSettings = subscribeToFeeSettings(student.schoolId, student.currentClass, academicYear.current, (d) => { feeSettings = d; repaintBalance(); });
   if (tabFinanceUnsub.fees) tabFinanceUnsub.fees();
   tabFinanceUnsub.fees = subscribeToStudentFees(student.id, academicYear.current, (d) => { otherFees = d; repaintOtherFees(); repaintBalance(); });
   if (tabFinanceUnsub.reductions) tabFinanceUnsub.reductions();
@@ -3488,22 +3794,36 @@ function renderStudentFinanceTab(panel, student) {
 }
 
 function openAssignFeeModal(student) {
-  if (feeTypesCache.length === 0) {
-    alert("Aucun frais dans le catalogue. Ajoutez-en un depuis Finances > Paramètres des frais.");
-    return;
-  }
-  return createModal({
-    title: "Assigner un frais",
+  const catalogOptions = feeTypesCache
+    .map((f) => `<option value="${f.id}" data-name="${escapeHtml(f.name)}" data-amount="${f.defaultAmount}">${escapeHtml(f.name)} — ${formatFCFA(f.defaultAmount)}</option>`)
+    .join("");
+
+  const overlay = createModal({
+    title: "Ajouter un autre frais",
     bodyHtml: `
-      <label>Frais
-        <select name="feeTypeId" required>${feeTypesCache.map((f) => `<option value="${f.id}">${escapeHtml(f.name)} (${formatFCFA(f.defaultAmount)})</option>`).join("")}</select>
-      </label>
+      ${feeTypesCache.length > 0 ? `
+        <label>Remplir depuis le catalogue (facultatif)
+          <select id="fee-catalog-pick">
+            <option value="">— Saisie libre —</option>
+            ${catalogOptions}
+          </select>
+        </label>
+      ` : ""}
+      <label>Motif / nature du frais<input type="text" name="name" id="fee-name" required placeholder="Ex. Frais de bulletin, photocopies…" /></label>
+      <label>Montant (FCFA)<input type="number" name="amount" id="fee-amount" min="0" required /></label>
+      <p class="muted">Ce frais et son motif apparaîtront dans le solde de l'élève, avec traçabilité complète du paiement associé.</p>
     `,
-    onSubmit: async (data) => {
-      const feeType = feeTypesCache.find((f) => f.id === data.feeTypeId);
-      await assignFeeToStudent(student, feeType, academicYear.current);
-    }
+    onSubmit: async (data) => addCustomFeeToStudent(student, data, academicYear.current)
   });
+
+  const picker = overlay.querySelector("#fee-catalog-pick");
+  picker?.addEventListener("change", () => {
+    const opt = picker.options[picker.selectedIndex];
+    overlay.querySelector("#fee-name").value = opt.dataset.name || "";
+    overlay.querySelector("#fee-amount").value = opt.dataset.amount || "";
+  });
+
+  return overlay;
 }
 
 function openAddReductionModal(student) {
@@ -3802,27 +4122,57 @@ function renderReports(content, profile) {
 
 function paintReports(box, profile, schoolIdFilter) {
   const schoolId = schoolIdFilter === "all" ? null : schoolIdFilter;
+  const schoolName = schoolId ? currentSchools.find((s) => s.id === schoolId)?.name || "" : "Toutes les écoles";
+  const generatedBy = `${profile.firstName || ""} ${profile.lastName || ""}`.trim();
   const students = allStudentsCache.filter((s) => !schoolId || s.schoolId === schoolId);
   const byClass = CLASSES.map((c) => {
     const inClass = students.filter((s) => s.currentClass === c);
     return { classe: c, total: inClass.length, boys: inClass.filter((s) => s.sex === "M").length, girls: inClass.filter((s) => s.sex === "F").length };
   });
 
+  // Sections accumulees au fur et a mesure (l'effectif est synchrone, la finance arrive de maniere asynchrone).
+  const reportSections = {
+    effectifs: {
+      heading: "Effectifs par classe",
+      headers: ["Classe", "Effectif", "Garçons", "Filles"],
+      rows: byClass.map((r) => [r.classe, r.total, r.boys, r.girls])
+    }
+  };
+
+  const buildAndRun = (action) => {
+    const sections = Object.values(reportSections);
+    const options = {
+      title: "Rapport général",
+      subtitle: `Année scolaire ${academicYear.current}`,
+      schoolName,
+      generatedBy,
+      sections
+    };
+    if (action === "pdf") printReportDocument(options);
+    else downloadReportAsWord(options, `rapport-${new Date().toISOString().slice(0, 10)}`);
+  };
+
   box.innerHTML = `
-    <div class="panel" id="report-effectifs">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3>Effectifs par classe</h3>
-        <button class="btn-secondary btn-sm" id="export-effectifs">${icon("file-text", 16)} Exporter CSV</button>
+    <div class="panel report-actions-panel">
+      <h3>Rapport complet — ${escapeHtml(schoolName)}</h3>
+      <p class="muted">Document officiel prêt à imprimer ou à classer, avec l'en-tête de l'établissement.</p>
+      <div class="report-actions">
+        <button class="btn-primary" id="btn-report-pdf">${icon("file-text", 18)} Télécharger en PDF</button>
+        <button class="btn-secondary" id="btn-report-word">${icon("file-text", 18)} Télécharger en Word</button>
       </div>
+    </div>
+
+    <div class="panel" id="report-effectifs" style="margin-top:16px;">
+      <h3>Effectifs par classe</h3>
       <table class="data-table" style="margin-top:10px;">
         <thead><tr><th>Classe</th><th>Effectif</th><th>Garçons</th><th>Filles</th></tr></thead>
         <tbody>${byClass.map((r) => `<tr><td>${r.classe}</td><td>${r.total}</td><td>${r.boys}</td><td>${r.girls}</td></tr>`).join("")}</tbody>
       </table>
-      <button class="btn-secondary btn-sm" style="margin-top:10px;" onclick="window.print()">${icon("file-text", 16)} Imprimer</button>
     </div>
 
     ${hasPermission(profile.role, PERMISSIONS.VIEW_FINANCE) ? `
       <div class="panel" style="margin-top:16px;" id="report-finance"><p class="muted">Chargement du rapport financier…</p></div>
+      <div class="panel" style="margin-top:16px;" id="report-late"><p class="muted">Chargement des retards de paiement…</p></div>
     ` : ""}
 
     ${hasPermission(profile.role, PERMISSIONS.VIEW_ACADEMICS) ? `
@@ -3833,9 +4183,8 @@ function paintReports(box, profile, schoolIdFilter) {
     ` : ""}
   `;
 
-  document.getElementById("export-effectifs").addEventListener("click", () => {
-    exportToCSV("effectifs-par-classe", ["Classe", "Effectif", "Garçons", "Filles"], byClass.map((r) => [r.classe, r.total, r.boys, r.girls]));
-  });
+  document.getElementById("btn-report-pdf").addEventListener("click", () => buildAndRun("pdf"));
+  document.getElementById("btn-report-word").addEventListener("click", () => buildAndRun("word"));
 
   if (window.Chart) {
     const ctx = document.getElementById("chart-effectifs");
@@ -3860,22 +4209,23 @@ function paintReports(box, profile, schoolIdFilter) {
       const byMonth = {};
       valid.forEach((p) => { byMonth[p.date.slice(0, 7)] = (byMonth[p.date.slice(0, 7)] || 0) + p.amount; });
       const months = Object.keys(byMonth).sort();
+
+      reportSections.finance = {
+        heading: `Recettes par mois — ${academicYear.current}`,
+        headers: ["Mois", "Recettes"],
+        rows: months.map((m) => [m, formatFCFA(byMonth[m])])
+      };
+
       const box2 = document.getElementById("report-finance");
       if (!box2) return;
       box2.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <h3>Recettes par mois — ${escapeHtml(academicYear.current)}</h3>
-          <button class="btn-secondary btn-sm" id="export-finance">${icon("file-text", 16)} Exporter CSV</button>
-        </div>
+        <h3>Recettes par mois — ${escapeHtml(academicYear.current)}</h3>
         <table class="data-table" style="margin-top:10px;">
           <thead><tr><th>Mois</th><th>Recettes</th></tr></thead>
           <tbody>${months.map((m) => `<tr><td>${m}</td><td>${formatFCFA(byMonth[m])}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">Aucun paiement enregistré.</td></tr>`}</tbody>
         </table>
         <canvas id="chart-finance" height="90" style="margin-top:14px;"></canvas>
       `;
-      document.getElementById("export-finance").addEventListener("click", () => {
-        exportToCSV("recettes-par-mois", ["Mois", "Recettes (FCFA)"], months.map((m) => [m, Math.round(byMonth[m])]));
-      });
       if (window.Chart) {
         const ctx2 = document.getElementById("chart-finance");
         if (ctx2) {
@@ -3886,6 +4236,24 @@ function paintReports(box, profile, schoolIdFilter) {
           });
         }
       }
+    });
+
+    computeLateStudents(schoolId, (rows) => {
+      reportSections.late = {
+        heading: "Élèves en retard de paiement",
+        headers: ["Matricule", "Nom", "Classe", "École", "Composantes en retard", "Restant dû"],
+        rows: rows.map((r) => [r.matricule, `${r.lastName} ${r.firstName}`, r.classe, r.schoolName, r.lateLabels, formatFCFA(r.remaining)]),
+        highlight: () => "red"
+      };
+      const box3 = document.getElementById("report-late");
+      if (!box3) return;
+      box3.innerHTML = `
+        <h3>Élèves en retard de paiement</h3>
+        <table class="data-table" style="margin-top:10px;">
+          <thead><tr><th>Matricule</th><th>Nom</th><th>Classe</th><th>École</th><th>Composantes en retard</th><th>Restant dû</th></tr></thead>
+          <tbody>${rows.map((r) => `<tr><td>${r.matricule}</td><td>${escapeHtml(r.lastName)} ${escapeHtml(r.firstName)}</td><td>${r.classe}</td><td>${escapeHtml(r.schoolName)}</td><td><span class="badge" style="background:var(--danger); color:#fff;">${escapeHtml(r.lateLabels)}</span></td><td>${formatFCFA(r.remaining)}</td></tr>`).join("") || `<tr><td colspan="6" class="muted">Aucun retard 🎉</td></tr>`}</tbody>
+        </table>
+      `;
     });
   }
 }
