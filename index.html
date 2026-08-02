@@ -390,6 +390,17 @@ a { color: var(--gold-500); }
   padding: 5px 14px; font-size: 0.82rem; font-weight: 500;
 }
 
+.password-field-row { display: flex; gap: 8px; align-items: center; }
+.password-field-row input { flex: 1; font-family: monospace; letter-spacing: 0.02em; }
+
+.credentials-box {
+  background: var(--surface-2); border: 1.5px dashed var(--gold-500); border-radius: var(--radius-sm);
+  padding: 14px 16px; display: grid; gap: 10px; margin: 14px 0;
+}
+.credentials-box div { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.credentials-box strong { font-family: monospace; font-size: 1rem; color: var(--navy-900); }
+[data-theme="dark"] .credentials-box strong { color: var(--gold-400); }
+
 .report-actions-panel { background: linear-gradient(135deg, var(--navy-900), var(--navy-800)); color: #fff; }
 .report-actions-panel h3 { color: #fff; }
 .report-actions-panel p { color: var(--gold-100); }
@@ -2066,23 +2077,33 @@ function formatFCFA(amount) {
  *  standard sans backend dédié : ouvrir une application Firebase
  *  secondaire et temporaire, y créer le nouveau compte, puis la
  *  détruire — la session de l'Administrateur Général n'est jamais
- *  affectée. Le nouvel utilisateur reçoit un e-mail pour définir
- *  lui-même son mot de passe (aucun mot de passe temporaire à
- *  communiquer à l'oral ou par écrit).
+ *  affectée.
+ *
+ *  L'Administrateur Général choisit lui-même le mot de passe du nouveau
+ *  compte (ou en génère un automatiquement) et le communique directement
+ *  à la personne concernée — plus fiable que de dépendre d'un e-mail de
+ *  réinitialisation qui peut arriver en spam ou ne jamais arriver.
  * =============================================================
  */
 
-function randomTempPassword() {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+/** Génère un mot de passe lisible et solide (ex. "Kalu-4827-Zeno") pour être facilement recopié/transmis. */
+function generateReadablePassword() {
+  const syllables = ["ka", "lu", "mi", "zo", "ta", "ru", "fe", "no", "ve", "sa", "bi", "do"];
+  const pick = () => syllables[Math.floor(Math.random() * syllables.length)];
+  const word = (pick() + pick() + pick()).replace(/^./, (c) => c.toUpperCase());
+  const digits = Math.floor(1000 + Math.random() * 9000);
+  return `${word}-${digits}`;
 }
 
+/**
+ * Crée le compte Firebase Authentication ET le profil applicatif, avec le
+ * mot de passe choisi par l'Administrateur Général (data.password).
+ */
 async function createUserAccount(data) {
   const secondaryApp = initializeApp(firebaseConfig, `user-creation-${Date.now()}`);
   const secondaryAuth = getAuth(secondaryApp);
   try {
-    const credential = await createUserWithEmailAndPassword(secondaryAuth, data.email.trim(), randomTempPassword());
+    const credential = await createUserWithEmailAndPassword(secondaryAuth, data.email.trim(), data.password);
     await setDoc(doc(db, "users", credential.user.uid), {
       email: data.email.trim(),
       firstName: data.firstName.trim(),
@@ -2095,7 +2116,6 @@ async function createUserAccount(data) {
       createdAt: serverTimestamp(),
       lastLogin: null
     });
-    await sendPasswordResetEmail(secondaryAuth, data.email.trim());
     await signOut(secondaryAuth);
   } finally {
     await deleteApp(secondaryApp);
@@ -3983,7 +4003,7 @@ function renderUsers(content, profile) {
           ${u.email === "evangelisteanicette@gmail.com" ? '<span class="muted">Compte principal</span>' : `
             <button class="btn-secondary btn-sm" data-edit-user="${u.id}">Modifier</button>
             <button class="btn-secondary btn-sm" data-toggle-user="${u.id}">${u.status === "disabled" ? "Réactiver" : "Désactiver"}</button>
-            <button class="btn-secondary btn-sm" data-reset-user="${u.id}">Mot de passe</button>
+            <button class="btn-secondary btn-sm" data-reset-user="${u.id}">Réinitialiser mot de passe</button>
           `}
         </td>
       </tr>`)
@@ -4001,15 +4021,16 @@ function renderUsers(content, profile) {
     tbody.querySelectorAll("[data-reset-user]").forEach((btn) =>
       btn.addEventListener("click", async () => {
         const u = users.find((x) => x.id === btn.dataset.resetUser);
+        if (!confirm(`Envoyer un e-mail de réinitialisation à ${u.email} ?\n\nCette personne devra ouvrir cet e-mail (vérifier aussi les indésirables/spam) et cliquer sur le lien pour choisir un nouveau mot de passe.`)) return;
         await sendPasswordReset(u.email);
-        alert(`E-mail de réinitialisation envoyé à ${u.email}.`);
+        alert(`E-mail envoyé à ${u.email}. Si la personne ne le reçoit pas sous quelques minutes, demandez-lui de vérifier son dossier spam/indésirables.`);
       })
     );
   });
 }
 
 function openCreateUserModal() {
-  return createModal({
+  const overlay = createModal({
     title: "Créer un compte utilisateur",
     wide: true,
     bodyHtml: `
@@ -4026,12 +4047,59 @@ function openCreateUserModal() {
             <option value="enseignant">Enseignant</option>
           </select>
         </label>
-        <label>École<select name="schoolId" required>${currentSchools.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
+        <label class="span-2">École<select name="schoolId" required>${currentSchools.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("")}</select></label>
       </div>
-      <p class="muted">Le nouvel utilisateur recevra un e-mail lui permettant de définir lui-même son mot de passe.</p>
+      <div class="form-section-title">Mot de passe</div>
+      <div class="password-field-row">
+        <input type="text" name="password" id="new-user-password" required minlength="6" placeholder="Au moins 6 caractères" value="${generateReadablePassword()}" />
+        <button type="button" class="btn-secondary btn-sm" id="btn-regen-password">Régénérer</button>
+      </div>
+      <p class="muted">
+        Notez ce mot de passe (ou modifiez-le) puis communiquez-le vous-même à la personne, par téléphone ou en personne.
+        C'est plus fiable qu'un e-mail automatique, qui peut arriver dans les indésirables ou ne jamais arriver.
+        La personne pourra le changer elle-même plus tard via "Mot de passe oublié" sur l'écran de connexion.
+      </p>
     `,
-    onSubmit: async (data) => createUserAccount(data)
+    onSubmit: async (data) => {
+      await createUserAccount(data);
+      showCredentialsConfirmation(data);
+    }
   });
+
+  overlay.querySelector("#btn-regen-password").addEventListener("click", () => {
+    overlay.querySelector("#new-user-password").value = generateReadablePassword();
+  });
+
+  return overlay;
+}
+
+function showCredentialsConfirmation(data) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>${icon("shield", 18)} Compte créé</h3>
+        <button class="icon-btn" id="cred-close">${icon("x")}</button>
+      </div>
+      <div class="modal-body">
+        <p>Communiquez ces informations à <strong>${escapeHtml(data.firstName)} ${escapeHtml(data.lastName)}</strong> pour sa première connexion :</p>
+        <div class="credentials-box">
+          <div><span class="muted">E-mail</span><strong>${escapeHtml(data.email)}</strong></div>
+          <div><span class="muted">Mot de passe</span><strong>${escapeHtml(data.password)}</strong></div>
+        </div>
+        <p class="muted">La personne pourra changer ce mot de passe plus tard depuis "Mot de passe oublié" sur l'écran de connexion.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn-primary" id="cred-ok">J'ai noté, fermer</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector("#cred-close").addEventListener("click", close);
+  overlay.querySelector("#cred-ok").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
 }
 
 function openEditUserModal(user) {
